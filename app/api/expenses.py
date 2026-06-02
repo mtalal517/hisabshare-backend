@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
+from app.core.errors import handle_database_error
 from app.models import Expense, Hisab, User
 from app.schemas.expense import ExpenseCreate, ExpenseResponse, ExpenseUpdate
 from app.services.totals import refresh_hisab_total
@@ -26,7 +28,10 @@ def create_expense(payload: ExpenseCreate, db: Session = Depends(get_db), user: 
     db.add(expense)
     db.flush()
     refresh_hisab_total(db, payload.hisab_id)
-    db.commit()
+    try:
+        db.commit()
+    except OperationalError as error:
+        handle_database_error(error)
     db.refresh(expense)
     return expense
 
@@ -50,8 +55,12 @@ def update_expense(
     require_owned_hisab(db, expense.hisab_id, user.id)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(expense, field, value)
+    db.flush()
     refresh_hisab_total(db, expense.hisab_id)
-    db.commit()
+    try:
+        db.commit()
+    except OperationalError as error:
+        handle_database_error(error)
     db.refresh(expense)
     return expense
 
@@ -66,4 +75,7 @@ def delete_expense(expense_id: str, db: Session = Depends(get_db), user: User = 
     db.delete(expense)
     db.flush()
     refresh_hisab_total(db, hisab_id)
-    db.commit()
+    try:
+        db.commit()
+    except OperationalError as error:
+        handle_database_error(error)

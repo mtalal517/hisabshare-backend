@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.errors import handle_database_error
 from app.models import Hisab, User
 from app.schemas.hisab import HisabCreate, HisabResponse, HisabUpdate, ShareResponse
 
@@ -16,7 +18,10 @@ router = APIRouter(prefix="/hisabs", tags=["hisabs"])
 def create_hisab(payload: HisabCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     hisab = Hisab(user_id=user.id, person_name=payload.person_name, title=payload.title)
     db.add(hisab)
-    db.commit()
+    try:
+        db.commit()
+    except OperationalError as error:
+        handle_database_error(error)
     db.refresh(hisab)
     return hisab
 
@@ -46,7 +51,10 @@ def update_hisab(
         raise HTTPException(status_code=404, detail="Hisab not found")
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(hisab, field, value)
-    db.commit()
+    try:
+        db.commit()
+    except OperationalError as error:
+        handle_database_error(error)
     db.refresh(hisab)
     return hisab
 
@@ -57,7 +65,10 @@ def delete_hisab(hisab_id: str, db: Session = Depends(get_db), user: User = Depe
     if not hisab:
         raise HTTPException(status_code=404, detail="Hisab not found")
     db.delete(hisab)
-    db.commit()
+    try:
+        db.commit()
+    except OperationalError as error:
+        handle_database_error(error)
 
 
 @router.post("/{hisab_id}/share", response_model=ShareResponse)
@@ -70,4 +81,3 @@ def generate_share_link(hisab_id: str, db: Session = Depends(get_db), user: User
         share_token=hisab.share_token,
         share_url=f"{settings.frontend_url}/share/{hisab.share_token}",
     )
-
